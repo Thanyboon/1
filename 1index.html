@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบร้านค้า POS - ร้านอาหารดีลิเชียส</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Kanit', sans-serif; }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            animation: slideInRight 0.3s ease-out;
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        
+        .notification.success { background: linear-gradient(135deg, #10b981, #059669); }
+        .notification.error { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .notification.info { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+        
+        .tab-button.active {
+            background: #ea580c;
+            color: white;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: bold;
+        }
+        
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-preparing { background: #dbeafe; color: #1e40af; }
+        .status-ready { background: #d1fae5; color: #065f46; }
+        .status-delivered { background: #f3f4f6; color: #374151; }
+        .status-cancelled { background: #fee2e2; color: #991b1b; }
+        
+        .connection-indicator {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: #10b981;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: bold;
+            z-index: 1000;
+        }
+        
+        .connection-indicator.disconnected {
+            background: #ef4444;
+        }
+        
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .order-card {
+            transition: all 0.3s ease;
+        }
+        
+        .order-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .menu-card {
+            transition: all 0.3s ease;
+        }
+        
+        .menu-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-indicator">
+        🟢 เชื่อมต่อแล้ว
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-lg">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="text-4xl">🏪</div>
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-800">ระบบร้านค้า POS</h1>
+                        <p class="text-gray-600">ร้านอาหารดีลิเชียส - จัดการร้านแบบครบวงจร</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <div class="text-right">
+                        <div class="text-sm text-gray-600">สถานะร้าน</div>
+                        <div class="font-bold text-green-600 flex items-center">
+                            <div class="w-3 h-3 bg-green-500 rounded-full mr-2 pulse-animation"></div>
+                            เปิดให้บริการ
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm text-gray-600">เวลา</div>
+                        <div class="font-bold text-gray-800" id="currentTime">--:--:--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="bg-orange-500 text-white shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex space-x-1">
+                <button onclick="showTab('orders')" class="tab-button active px-8 py-4 font-medium hover:bg-orange-600 transition-all">
+                    📋 จัดการออเดอร์
+                </button>
+                <button onclick="showTab('menu')" class="tab-button px-8 py-4 font-medium hover:bg-orange-600 transition-all">
+                    🍽️ จัดการเมนู
+                </button>
+                <button onclick="showTab('reports')" class="tab-button px-8 py-4 font-medium hover:bg-orange-600 transition-all">
+                    📊 รายงานยอดขาย
+                </button>
+                <button onclick="showTab('settings')" class="tab-button px-8 py-4 font-medium hover:bg-orange-600 transition-all">
+                    ⚙️ ตั้งค่า
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-6">
+        <!-- Orders Tab -->
+        <div id="ordersTab" class="tab-content">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold text-gray-800">📋 จัดการออเดอร์</h2>
+                <div class="flex space-x-3">
+                    <button onclick="refreshOrders()" class="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-all">
+                        🔄 รีเฟรช
+                    </button>
+                    <button onclick="playNotificationSound()" class="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 transition-all">
+                        🔔 ทดสอบเสียง
+                    </button>
+                </div>
+            </div>
+
+            <!-- Order Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-yellow-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-3xl font-bold text-yellow-600" id="pendingCount">0</div>
+                            <div class="text-gray-600 font-medium">รอดำเนินการ</div>
+                        </div>
+                        <div class="text-4xl text-yellow-500">⏳</div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-3xl font-bold text-blue-600" id="preparingCount">0</div>
+                            <div class="text-gray-600 font-medium">กำลังเตรียม</div>
+                        </div>
+                        <div class="text-4xl text-blue-500">👨‍🍳</div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-3xl font-bold text-green-600" id="readyCount">0</div>
+                            <div class="text-gray-600 font-medium">พร้อมส่ง</div>
+                        </div>
+                        <div class="text-4xl text-green-500">🚚</div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-gray-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-3xl font-bold text-gray-600" id="completedCount">0</div>
+                            <div class="text-gray-600 font-medium">เสร็จแล้ว</div>
+                        </div>
+                        <div class="text-4xl text-gray-500">✅</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Orders List -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6" id="ordersList">
+                <!-- Orders will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Menu Management Tab -->
+        <div id="menuTab" class="tab-content hidden">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold text-gray-800">🍽️ จัดการเมนู</h2>
+                <button onclick="showAddMenuModal()" class="bg-green-500 text-white px-8 py-3 rounded-lg hover:bg-green-600 transition-all">
+                    ➕ เพิ่มเมนูใหม่
+                </button>
+            </div>
+
+            <!-- Menu Categories -->
+            <div class="flex space-x-4 mb-6">
+                <button onclick="filterMenu('all')" class="category-filter active bg-orange-500 text-white px-6 py-2 rounded-full hover:bg-orange-600">
+                    ทั้งหมด
+                </button>
+                <button onclick="filterMenu('อาหารจานหลัก')" class="category-filter bg-gray-200 text-gray-700 px-6 py-2 rounded-full hover:bg-gray-300">
+                    อาหารจานหลัก
+                </button>
+                <button onclick="filterMenu('เครื่องดื่ม')" class="category-filter bg-gray-200 text-gray-700 px-6 py-2 rounded-full hover:bg-gray-300">
+                    เครื่องดื่ม
+                </button>
+                <button onclick="filterMenu('ของหวาน')" class="category-filter bg-gray-200 text-gray-700 px-6 py-2 rounded-full hover:bg-gray-300">
+                    ของหวาน
+                </button>
+                <button onclick="filterMenu('อาหารว่าง')" class="category-filter bg-gray-200 text-gray-700 px-6 py-2 rounded-full hover:bg-gray-300">
+                    อาหารว่าง
+                </button>
+            </div>
+
+            <!-- Menu Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" id="menuGrid">
+                <!-- Menus will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div id="reportsTab" class="tab-content hidden">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">📊 รายงานยอดขาย</h2>
+            
+            <!-- Sales Summary -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-lg p-8 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-4xl font-bold text-green-600" id="todayRevenue">0฿</div>
+                            <div class="text-gray-600 font-medium">ยอดขายวันนี้</div>
+                            <div class="text-sm text-green-600 mt-1">+12% จากเมื่อวาน</div>
+                        </div>
+                        <div class="text-5xl text-green-500">💰</div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-8 border-l-4 border-blue-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-4xl font-bold text-blue-600" id="todayOrdersCount">0</div>
+                            <div class="text-gray-600 font-medium">ออเดอร์วันนี้</div>
+                            <div class="text-sm text-blue-600 mt-1">+8% จากเมื่อวาน</div>
+                        </div>
+                        <div class="text-5xl text-blue-500">📦</div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-8 border-l-4 border-orange-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-4xl font-bold text-orange-600" id="avgOrderValue">0฿</div>
+                            <div class="text-gray-600 font-medium">ค่าเฉลี่ยต่อออเดอร์</div>
+                            <div class="text-sm text-orange-600 mt-1">+5% จากเมื่อวาน</div>
+                        </div>
+                        <div class="text-5xl text-orange-500">⭐</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts and Popular Items -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Popular Items -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold mb-6 text-gray-800">🏆 เมนูยอดนิยม</h3>
+                    <div id="popularItems" class="space-y-4">
+                        <!-- Popular items will be rendered here -->
+                    </div>
+                </div>
+
+                <!-- Recent Activities -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold mb-6 text-gray-800">🔔 กิจกรรมล่าสุด</h3>
+                    <div id="recentActivities" class="space-y-3">
+                        <!-- Recent activities will be rendered here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settingsTab" class="tab-content hidden">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">⚙️ ตั้งค่าระบบ</h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Store Settings -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold mb-4 text-gray-800">🏪 ข้อมูลร้าน</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">ชื่อร้าน</label>
+                            <input type="text" id="storeName" value="ร้านอาหารดีลิเชียส" class="w-full p-3 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">เบอร์โทร</label>
+                            <input type="text" id="storePhone" value="02-XXX-XXXX" class="w-full p-3 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">ที่อยู่</label>
+                            <textarea id="storeAddress" class="w-full p-3 border rounded-lg h-20">123 ถนนสุขุมวิท กรุงเทพฯ 10110</textarea>
+                        </div>
+                        <button onclick="saveStoreSettings()" class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600">
+                            💾 บันทึกข้อมูล
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Payment Settings -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold mb-4 text-gray-800">💳 ข้อมูลการชำระเงิน</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">ธนาคาร</label>
+                            <select id="bankName" class="w-full p-3 border rounded-lg">
+                                <option value="กสิกรไทย">ธนาคารกสิกรไทย</option>
+                                <option value="กรุงเทพ">ธนาคารกรุงเทพ</option>
+                                <option value="ไทยพาณิชย์">ธนาคารไทยพาณิชย์</option>
+                                <option value="กรุงไทย">ธนาคารกรุงไทย</option>
+                                <option value="ทหารไทยธนชาต">ธนาคารทหารไทยธนชาต</option>
+                                <option value="กรุงศรีอยุธยา">ธนาคารกรุงศรีอยุธยา</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">เลขที่บัญชี</label>
+                            <input type="text" id="accountNumber" value="123-4-56789-0" class="w-full p-3 border rounded-lg" placeholder="xxx-x-xxxxx-x">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">ชื่อบัญชี</label>
+                            <input type="text" id="accountName" value="ร้านอาหารดีลิเชียส" class="w-full p-3 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">QR Code PromptPay</label>
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
+                                <input type="file" id="qrCodeUpload" accept="image/*" class="hidden" onchange="handleQRCodeUpload(event)">
+                                <div id="qrCodePreview" class="mb-3">
+                                    <div class="w-32 h-32 mx-auto bg-gray-100 rounded-lg flex items-center justify-center" id="qrPreviewContainer">
+                                        <svg class="w-16 h-16 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4z"/>
+                                            <path d="M18 13h-2v2h2v-2zM20 15h-2v2h2v-2zM16 15h-2v2h2v-2zM18 17h-2v2h2v-2zM20 19h-2v2h2v-2z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="document.getElementById('qrCodeUpload').click()" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-all">
+                                    📱 อัปโหลด QR Code
+                                </button>
+                                <p class="text-xs text-gray-500 mt-2">รองรับ JPG, PNG (สูงสุด 2MB)</p>
+                            </div>
+                        </div>
+                        <button onclick="savePaymentSettings()" class="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600">
+                            💾 บันทึกข้อมูลการชำระเงิน
+                        </button>
+                    </div>
+                </div>
+
+                <!-- System Settings -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold mb-4 text-gray-800">🔧 ตั้งค่าระบบ</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span>เสียงแจ้งเตือนออเดอร์ใหม่</span>
+                            <label class="switch">
+                                <input type="checkbox" id="soundNotification" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>อัปเดตอัตโนมัติ</span>
+                            <label class="switch">
+                                <input type="checkbox" id="autoUpdate" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>แสดง QR Code ในออเดอร์</span>
+                            <label class="switch">
+                                <input type="checkbox" id="showQRInOrder" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">ค่าจัดส่ง (บาท)</label>
+                            <input type="number" id="deliveryFee" value="30" class="w-full p-3 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">เวลาเตรียมอาหารเฉลี่ย (นาที)</label>
+                            <input type="number" id="avgPrepTime" value="20" class="w-full p-3 border rounded-lg">
+                        </div>
+                        <button onclick="saveSystemSettings()" class="w-full bg-purple-500 text-white py-3 rounded-lg hover:bg-purple-600">
+                            💾 บันทึกการตั้งค่า
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add Menu Modal -->
+    <div id="addMenuModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-8 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-gray-800">➕ เพิ่มเมนูใหม่</h3>
+            <form id="addMenuForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">ชื่อเมนู</label>
+                    <input type="text" id="menuName" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">หมวดหมู่</label>
+                    <select id="menuCategory" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500">
+                        <option value="">เลือกหมวดหมู่</option>
+                        <option value="อาหารจานหลัก">อาหารจานหลัก</option>
+                        <option value="เครื่องดื่ม">เครื่องดื่ม</option>
+                        <option value="ของหวาน">ของหวาน</option>
+                        <option value="อาหารว่าง">อาหารว่าง</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">ราคา (บาท)</label>
+                    <input type="number" id="menuPrice" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">คำอธิบาย</label>
+                    <textarea id="menuDescription" class="w-full p-3 border rounded-lg h-20 focus:ring-2 focus:ring-orange-500"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">เวลาเตรียม (นาที)</label>
+                    <input type="number" id="menuPrepTime" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500" value="15">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">รูปภาพเมนู</label>
+                    <div class="space-y-4">
+                        <!-- Image Upload Section -->
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-orange-400 transition-colors">
+                            <input type="file" id="menuImageUpload" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                            <div id="imagePreview" class="mb-4">
+                                <div class="w-32 h-32 mx-auto bg-gray-100 rounded-lg flex items-center justify-center text-4xl" id="previewContainer">
+                                    🍽️
+                                </div>
+                            </div>
+                            <button type="button" onclick="document.getElementById('menuImageUpload').click()" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-all">
+                                📷 อัปโหลดรูปภาพ
+                            </button>
+                            <p class="text-sm text-gray-500 mt-2">หรือเลือกไอคอนด้านล่าง</p>
+                        </div>
+                        
+                        <!-- Icon Selection -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">เลือกไอคอน</label>
+                            <div class="grid grid-cols-6 gap-2">
+                                <button type="button" onclick="selectIcon('🍤')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍤</button>
+                                <button type="button" onclick="selectIcon('🍲')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍲</button>
+                                <button type="button" onclick="selectIcon('🍜')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍜</button>
+                                <button type="button" onclick="selectIcon('🍛')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍛</button>
+                                <button type="button" onclick="selectIcon('🍝')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍝</button>
+                                <button type="button" onclick="selectIcon('🍕')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍕</button>
+                                <button type="button" onclick="selectIcon('🧋')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🧋</button>
+                                <button type="button" onclick="selectIcon('☕')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">☕</button>
+                                <button type="button" onclick="selectIcon('🥤')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🥤</button>
+                                <button type="button" onclick="selectIcon('🍰')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍰</button>
+                                <button type="button" onclick="selectIcon('🍪')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍪</button>
+                                <button type="button" onclick="selectIcon('🍽️')" class="icon-btn p-2 text-2xl border rounded hover:bg-gray-100">🍽️</button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="selectedIcon" value="🍽️">
+                    <input type="hidden" id="selectedImage" value="">
+                </div>
+                <div class="flex space-x-4 pt-4">
+                    <button type="button" onclick="closeAddMenuModal()" class="flex-1 bg-gray-500 text-white py-3 rounded-lg hover:bg-gray-600 transition-all">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="flex-1 bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-all">
+                        เพิ่มเมนู
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // POS System JavaScript
+        let currentTab = 'orders';
+        let orders = [];
+        let menus = [];
+        let currentMenuFilter = 'all';
+        let selectedIcon = '🍽️';
+
+        // Real-time Data Management
+        class POSDataManager {
+            constructor() {
+                this.data = {
+                    orders: [],
+                    menus: [],
+                    stats: {
+                        todayOrders: 0,
+                        todaySales: 0,
+                        avgOrderValue: 0
+                    },
+                    activities: []
+                };
+                this.isConnected = true;
+                this.init();
+            }
+
+            init() {
+                this.loadData();
+                this.startRealTimeUpdates();
+                this.updateConnectionStatus();
+            }
+
+            loadData() {
+                const savedData = localStorage.getItem('posSystemData');
+                if (savedData) {
+                    this.data = { ...this.data, ...JSON.parse(savedData) };
+                } else {
+                    // Initialize with sample data
+                    this.data.menus = [
+                        { id: 1, name: 'ข้าวผัดกุ้ง', category: 'อาหารจานหลัก', price: 120, image: '🍤', description: 'ข้าวผัดกุ้งสดใหม่ รสชาติเข้มข้น', prepTime: 15, available: true, isNew: false },
+                        { id: 2, name: 'ต้มยำกุ้ง', category: 'อาหารจานหลัก', price: 150, image: '🍲', description: 'ต้มยำกุ้งรสจัดจ้าน เผ็ดร้อน', prepTime: 20, available: true, isNew: false },
+                        { id: 3, name: 'ชาไทย', category: 'เครื่องดื่ม', price: 45, image: '🧋', description: 'ชาไทยเข้มข้น หวานมัน', prepTime: 5, available: true, isNew: false },
+                        { id: 4, name: 'ส้มตำไทย', category: 'อาหารจานหลัก', price: 80, image: '🥗', description: 'ส้มตำรสแซ่บ เผ็ดตามใจ', prepTime: 10, available: true, isNew: true },
+                        { id: 5, name: 'กาแฟเย็น', category: 'เครื่องดื่ม', price: 50, image: '☕', description: 'กาแฟเย็นหอมกรุ่น', prepTime: 3, available: true, isNew: false }
+                    ];
+                    
+                    // Sample orders
+                    this.data.orders = [
+                        {
+                            id: '1',
+                            orderNumber: this.generateOrderNumber(),
+                            queueNumber: 1,
+                            customerName: 'คุณสมชาย',
+                            customerPhone: '081-234-5678',
+                            items: [
+                                { id: 1, name: 'ข้าวผัดกุ้ง', price: 120, quantity: 2, totalPrice: 240, image: '🍤' }
+                            ],
+                            subtotal: 240,
+                            deliveryFee: 30,
+                            total: 270,
+                            status: 'pending',
+                            createdAt: new Date().toISOString(),
+                            estimatedTime: 25
+                        },
+                        {
+                            id: '2',
+                            orderNumber: this.generateOrderNumber(),
+                            queueNumber: 2,
+                            customerName: 'คุณสมหญิง',
+                            customerPhone: '082-345-6789',
+                            items: [
+                                { id: 2, name: 'ต้มยำกุ้ง', price: 150, quantity: 1, totalPrice: 150, image: '🍲' },
+                                { id: 3, name: 'ชาไทย', price: 45, quantity: 2, totalPrice: 90, image: '🧋' }
+                            ],
+                            subtotal: 240,
+                            deliveryFee: 30,
+                            total: 270,
+                            status: 'preparing',
+                            createdAt: new Date(Date.now() - 600000).toISOString(),
+                            estimatedTime: 15
+                        }
+                    ];
+                    
+                    this.saveData();
+                }
+                
+                orders = this.data.orders;
+                menus = this.data.menus;
+                this.updateStats();
+            }
+
+            saveData() {
+                localStorage.setItem('posSystemData', JSON.stringify(this.data));
+            }
+
+            generateOrderNumber() {
+                return Math.floor(100000 + Math.random() * 900000).toString();
+            }
+
+            getNextQueueNumber() {
+                const activeOrders = this.data.orders.filter(o => 
+                    o.status !== 'delivered' && o.status !== 'cancelled'
+                );
+                return activeOrders.length > 0 ? Math.max(...activeOrders.map(o => o.queueNumber)) + 1 : 1;
+            }
+
+            addOrder(order) {
+                order.orderNumber = this.generateOrderNumber();
+                order.queueNumber = this.getNextQueueNumber();
+                this.data.orders.unshift(order);
+                this.saveData();
+                this.updateStats();
+                this.addActivity(`🆕 ออเดอร์ใหม่ #${order.orderNumber}`);
+                this.playNotificationSound();
+            }
+
+            updateOrderStatus(orderId, status) {
+                const order = this.data.orders.find(o => o.id === orderId);
+                if (order) {
+                    order.status = status;
+                    this.saveData();
+                    this.addActivity(`📋 อัปเดตสถานะ #${order.orderNumber}: ${this.getStatusText(status)}`);
+                }
+            }
+
+            deleteOrder(orderId) {
+                const orderIndex = this.data.orders.findIndex(o => o.id === orderId);
+                if (orderIndex !== -1) {
+                    const order = this.data.orders[orderIndex];
+                    this.data.orders.splice(orderIndex, 1);
+                    this.saveData();
+                    this.updateStats();
+                    this.addActivity(`🗑️ ลบออเดอร์ #${order.orderNumber}`);
+                }
+            }
+
+            addMenu(menu) {
+                menu.id = Date.now();
+                this.data.menus.push(menu);
+                this.saveData();
+                this.addActivity(`🍽️ เมนูใหม่: ${menu.name}`);
+            }
+
+            updateMenu(menuId, updates) {
+                const menuIndex = this.data.menus.findIndex(m => m.id === menuId);
+                if (menuIndex !== -1) {
+                    this.data.menus[menuIndex] = { ...this.data.menus[menuIndex], ...updates };
+                    this.saveData();
+                    this.addActivity(`📝 อัปเดตเมนู: ${this.data.menus[menuIndex].name}`);
+                }
+            }
+
+            addActivity(activity) {
+                this.data.activities.unshift({
+                    id: Date.now(),
+                    message: activity,
+                    timestamp: new Date().toISOString()
+                });
+                if (this.data.activities.length > 20) {
+                    this.data.activities = this.data.activities.slice(0, 20);
+                }
+            }
+
+            updateStats() {
+                const today = new Date().toDateString();
+                const todayOrders = this.data.orders.filter(o => 
+                    new Date(o.createdAt).toDateString() === today
+                );
+                
+                this.data.stats.todayOrders = todayOrders.length;
+                this.data.stats.todaySales = todayOrders.reduce((sum, order) => sum + order.total, 0);
+                this.data.stats.avgOrderValue = todayOrders.length > 0 ? 
+                    Math.round(this.data.stats.todaySales / todayOrders.length) : 0;
+            }
+
+            getStatusText(status) {
+                const statusMap = {
+                    'pending': 'รอดำเนินการ',
+                    'preparing': 'กำลังเตรียม',
+                    'ready': 'พร้อมส่ง',
+                    'delivered': 'ส่งแล้ว',
+                    'cancelled': 'ยกเลิก'
+                };
+                return statusMap[status] || status;
+            }
+
+            startRealTimeUpdates() {
+                setInterval(() => {
+                    this.updateConnectionStatus();
+                    this.simulateNewOrders();
+                }, 10000);
+
+                // Update time
+                setInterval(() => {
+                    document.getElementById('currentTime').textContent = 
+                        new Date().toLocaleTimeString('th-TH');
+                }, 1000);
+            }
+
+            simulateNewOrders() {
+                // Simulation disabled - orders will only come from real user input
+                // This function is kept for future use if needed
+                return;
+            }
+
+            updateConnectionStatus() {
+                const statusElement = document.getElementById('connectionStatus');
+                this.isConnected = Math.random() > 0.05; // 95% uptime
+                
+                if (this.isConnected) {
+                    statusElement.textContent = '🟢 เชื่อมต่อแล้ว';
+                    statusElement.className = 'connection-indicator';
+                } else {
+                    statusElement.textContent = '🔴 ขาดการเชื่อมต่อ';
+                    statusElement.className = 'connection-indicator disconnected';
+                }
+            }
+
+            playNotificationSound() {
+                // Create notification sound using Web Audio API
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+                    
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.3);
+                } catch (e) {
+                    console.log('Audio not supported');
+                }
+            }
+        }
+
+        // Initialize POS Data Manager
+        const posDataManager = new POSDataManager();
+
+        // Tab Management
+        function showTab(tabName) {
+            currentTab = tabName;
+            
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + 'Tab').classList.remove('hidden');
+            
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Render content
+            if (tabName === 'orders') renderOrders();
+            if (tabName === 'menu') renderMenus();
+            if (tabName === 'reports') renderReports();
+        }
+
+        // Orders Management
+        function renderOrders() {
+            const ordersList = document.getElementById('ordersList');
+            
+            // Update stats
+            const pending = orders.filter(o => o.status === 'pending').length;
+            const preparing = orders.filter(o => o.status === 'preparing').length;
+            const ready = orders.filter(o => o.status === 'ready').length;
+            const completed = orders.filter(o => o.status === 'delivered').length;
+            
+            document.getElementById('pendingCount').textContent = pending;
+            document.getElementById('preparingCount').textContent = preparing;
+            document.getElementById('readyCount').textContent = ready;
+            document.getElementById('completedCount').textContent = completed;
+            
+            // Render active orders - sorted by queue number and time
+            const activeOrders = orders
+                .filter(o => o.status !== 'delivered' && o.status !== 'cancelled')
+                .sort((a, b) => {
+                    // First sort by queue number
+                    if (a.queueNumber !== b.queueNumber) {
+                        return a.queueNumber - b.queueNumber;
+                    }
+                    // Then by creation time (oldest first)
+                    return new Date(a.createdAt) - new Date(b.createdAt);
+                });
+            
+            if (activeOrders.length === 0) {
+                ordersList.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <div class="text-6xl mb-4">📋</div>
+                        <h3 class="text-2xl font-bold mb-2">ไม่มีออเดอร์ที่รอดำเนินการ</h3>
+                        <p class="text-gray-600">เมื่อมีออเดอร์ใหม่เข้ามา จะแสดงที่นี่</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            ordersList.innerHTML = activeOrders.map(order => `
+                <div class="order-card bg-white rounded-xl shadow-lg p-6 border-l-4 ${getBorderColor(order.status)}">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800">#${order.orderNumber}</h3>
+                            <p class="text-gray-600">คิวที่ ${order.queueNumber} • ${order.customerName}</p>
+                            <p class="text-sm text-gray-500">${new Date(order.createdAt).toLocaleString('th-TH')}</p>
+                        </div>
+                        <div class="status-badge status-${order.status}">${posDataManager.getStatusText(order.status)}</div>
+                    </div>
+                    
+                    <div class="space-y-2 mb-4">
+                        ${order.items.map((item, itemIndex) => `
+                            <div class="flex justify-between items-center text-sm bg-gray-50 p-2 rounded">
+                                <span class="flex items-center">
+                                    <span class="text-lg mr-2">${item.image}</span>
+                                    ${item.name} x${item.quantity}
+                                </span>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold">${item.totalPrice}฿</span>
+                                    <button onclick="removeOrderItem('${order.id}', ${itemIndex})" class="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600 transition-all" title="ลบรายการนี้">
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div class="border-t pt-3 mb-4">
+                        <div class="flex justify-between font-bold text-lg">
+                            <span>รวมทั้งหมด:</span>
+                            <span class="text-orange-600">${order.total}฿</span>
+                        </div>
+                        ${getPaymentInfo(order)}
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="flex space-x-2 mb-2">
+                            <select onchange="updateOrderStatus('${order.id}', this.value)" class="flex-1 p-2 border rounded-lg text-sm">
+                                <option value="">เปลี่ยนสถานะ</option>
+                                <option value="pending" ${order.status === 'pending' ? 'selected' : ''}>รอดำเนินการ</option>
+                                <option value="preparing" ${order.status === 'preparing' ? 'selected' : ''}>กำลังเตรียม</option>
+                                <option value="ready" ${order.status === 'ready' ? 'selected' : ''}>พร้อมส่ง</option>
+                                <option value="delivered" ${order.status === 'delivered' ? 'selected' : ''}>ส่งแล้ว</option>
+                                <option value="cancelled" ${order.status === 'cancelled' ? 'selected' : ''}>ยกเลิก</option>
+                            </select>
+                            <button onclick="deleteOrder('${order.id}')" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 text-sm transition-all">
+                                🗑️
+                            </button>
+                        </div>
+                        ${getOrderActions(order)}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getBorderColor(status) {
+            const colorMap = {
+                'pending': 'border-yellow-500',
+                'preparing': 'border-blue-500',
+                'ready': 'border-green-500',
+                'delivered': 'border-gray-500',
+                'cancelled': 'border-red-500'
+            };
+            return colorMap[status] || 'border-gray-300';
+        }
+
+        function getOrderActions(order) {
+            let actions = '';
+            
+            if (order.status === 'pending') {
+                actions += `
+                    <button onclick="updateOrderStatus('${order.id}', 'preparing')" class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-all font-medium">
+                        👨‍🍳 เริ่มเตรียมอาหาร
+                    </button>
+                `;
+            }
+            
+            if (order.status === 'preparing') {
+                actions += `
+                    <button onclick="updateOrderStatus('${order.id}', 'ready')" class="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-all font-medium">
+                        ✅ อาหารพร้อม
+                    </button>
+                `;
+            }
+            
+            if (order.status === 'ready') {
+                actions += `
+                    <button onclick="updateOrderStatus('${order.id}', 'delivered')" class="w-full bg-orange-500 text-white py-3 rounded-lg hover:bg-orange-600 transition-all font-medium">
+                        🚚 ส่งแล้ว
+                    </button>
+                `;
+            }
+            
+
+            
+            return actions;
+        }
+
+        function updateOrderStatus(orderId, status) {
+            posDataManager.updateOrderStatus(orderId, status);
+            orders = posDataManager.data.orders;
+            renderOrders();
+            showNotification(`อัปเดตสถานะออเดอร์สำเร็จ!`, 'success');
+        }
+
+        function cancelOrder(orderId) {
+            if (confirm('ต้องการยกเลิกออเดอร์นี้หรือไม่?')) {
+                updateOrderStatus(orderId, 'cancelled');
+            }
+        }
+
+        function deleteOrder(orderId) {
+            if (confirm('ต้องการลบออเดอร์นี้ออกจากระบบหรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
+                posDataManager.deleteOrder(orderId);
+                orders = posDataManager.data.orders;
+                renderOrders();
+                showNotification('ลบออเดอร์สำเร็จ!', 'success');
+            }
+        }
+
+        function removeOrderItem(orderId, itemIndex) {
+            if (confirm('ต้องการลบรายการอาหารนี้ออกจากออเดอร์หรือไม่?')) {
+                const order = posDataManager.data.orders.find(o => o.id === orderId);
+                if (order && order.items.length > 1) {
+                    // Remove the item
+                    const removedItem = order.items.splice(itemIndex, 1)[0];
+                    
+                    // Recalculate totals
+                    order.subtotal = order.items.reduce((sum, item) => sum + item.totalPrice, 0);
+                    order.total = order.subtotal + order.deliveryFee;
+                    
+                    posDataManager.saveData();
+                    posDataManager.addActivity(`🗑️ ลบรายการ ${removedItem.name} จากออเดอร์ #${order.orderNumber}`);
+                    orders = posDataManager.data.orders;
+                    renderOrders();
+                    showNotification('ลบรายการอาหารสำเร็จ!', 'success');
+                } else if (order && order.items.length === 1) {
+                    // If only one item left, ask to delete entire order
+                    if (confirm('นี่เป็นรายการสุดท้ายในออเดอร์ ต้องการลบทั้งออเดอร์หรือไม่?')) {
+                        deleteOrder(orderId);
+                    }
+                }
+            }
+        }
+
+        function refreshOrders() {
+            renderOrders();
+            showNotification('รีเฟรชข้อมูลสำเร็จ!', 'success');
+        }
+
+        // Menu Management
+        function renderMenus() {
+            const menuGrid = document.getElementById('menuGrid');
+            let filteredMenus = menus;
+            
+            if (currentMenuFilter !== 'all') {
+                filteredMenus = menus.filter(menu => menu.category === currentMenuFilter);
+            }
+            
+            if (filteredMenus.length === 0) {
+                menuGrid.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <div class="text-6xl mb-4">🍽️</div>
+                        <h3 class="text-2xl font-bold mb-2">ไม่มีเมนูในหมวดนี้</h3>
+                        <p class="text-gray-600">เพิ่มเมนูใหม่เพื่อเริ่มต้น</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            menuGrid.innerHTML = filteredMenus.map(menu => `
+                <div class="menu-card bg-white rounded-xl shadow-lg overflow-hidden ${menu.isNew ? 'ring-2 ring-orange-400' : ''}">
+                    <div class="relative">
+                        <div class="w-full h-40 bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center overflow-hidden">
+                            ${menu.imageUrl ? 
+                                `<img src="${menu.imageUrl}" alt="${menu.name}" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                 <div class="w-full h-full flex items-center justify-center text-5xl" style="display:none;">${menu.image}</div>` :
+                                `<div class="text-5xl">${menu.image}</div>`
+                            }
+                        </div>
+                        <div class="absolute top-3 right-3 bg-white rounded-full px-3 py-1 font-bold text-orange-600 shadow">
+                            ${menu.price}฿
+                        </div>
+                        ${menu.isNew ? '<div class="absolute top-3 left-3 bg-red-500 text-white rounded-full px-2 py-1 text-xs font-bold pulse-animation">🆕 ใหม่!</div>' : ''}
+                        ${!menu.available ? '<div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center"><span class="bg-red-500 text-white px-4 py-2 rounded-full font-bold">หมด</span></div>' : ''}
+                    </div>
+                    <div class="p-4">
+                        <h3 class="font-bold text-lg mb-2 text-gray-800">${menu.name}</h3>
+                        <div class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full inline-block mb-2">${menu.category}</div>
+                        <p class="text-sm text-gray-600 mb-3">${menu.description}</p>
+                        <div class="text-xs text-gray-500 mb-4">⏱️ ${menu.prepTime} นาที</div>
+                        <div class="flex space-x-2">
+                            <button onclick="toggleMenuAvailability(${menu.id})" class="flex-1 ${menu.available ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-500 hover:bg-gray-600'} text-white py-2 rounded-lg text-sm transition-all">
+                                ${menu.available ? '✅ พร้อมขาย' : '❌ หมด'}
+                            </button>
+                            <button onclick="editMenu(${menu.id})" class="bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 text-sm transition-all">
+                                ✏️
+                            </button>
+                            <button onclick="deleteMenu(${menu.id})" class="bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 text-sm transition-all">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function filterMenu(category) {
+            currentMenuFilter = category;
+            
+            // Update filter buttons
+            document.querySelectorAll('.category-filter').forEach(btn => {
+                btn.classList.remove('active', 'bg-orange-500', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            event.target.classList.add('active', 'bg-orange-500', 'text-white');
+            event.target.classList.remove('bg-gray-200', 'text-gray-700');
+            
+            renderMenus();
+        }
+
+        function toggleMenuAvailability(menuId) {
+            const menu = menus.find(m => m.id === menuId);
+            if (menu) {
+                menu.available = !menu.available;
+                posDataManager.updateMenu(menuId, { available: menu.available });
+                menus = posDataManager.data.menus;
+                renderMenus();
+                showNotification(`อัปเดตสถานะเมนูสำเร็จ!`, 'success');
+            }
+        }
+
+        function deleteMenu(menuId) {
+            if (confirm('ต้องการลบเมนูนี้หรือไม่?')) {
+                posDataManager.data.menus = posDataManager.data.menus.filter(m => m.id !== menuId);
+                posDataManager.saveData();
+                menus = posDataManager.data.menus;
+                renderMenus();
+                showNotification('ลบเมนูสำเร็จ!', 'success');
+            }
+        }
+
+        function editMenu(menuId) {
+            // For now, just show a simple alert
+            showNotification('ฟีเจอร์แก้ไขเมนูจะเพิ่มในเวอร์ชันถัดไป', 'info');
+        }
+
+        // Add Menu Modal
+        function showAddMenuModal() {
+            document.getElementById('addMenuModal').classList.remove('hidden');
+        }
+
+        function closeAddMenuModal() {
+            document.getElementById('addMenuModal').classList.add('hidden');
+            document.getElementById('addMenuForm').reset();
+            selectedIcon = '🍽️';
+            document.getElementById('selectedIcon').value = '🍽️';
+            document.getElementById('selectedImage').value = '';
+            
+            // Reset preview
+            const previewContainer = document.getElementById('previewContainer');
+            previewContainer.innerHTML = '🍽️';
+            previewContainer.className = 'w-32 h-32 mx-auto bg-gray-100 rounded-lg flex items-center justify-center text-4xl';
+            
+            updateIconSelection();
+        }
+
+        function selectIcon(icon) {
+            selectedIcon = icon;
+            document.getElementById('selectedIcon').value = icon;
+            document.getElementById('selectedImage').value = '';
+            
+            // Update preview to show icon
+            const previewContainer = document.getElementById('previewContainer');
+            previewContainer.innerHTML = icon;
+            previewContainer.className = 'w-32 h-32 mx-auto bg-gray-100 rounded-lg flex items-center justify-center text-4xl';
+            
+            updateIconSelection();
+        }
+
+        function updateIconSelection() {
+            document.querySelectorAll('.icon-btn').forEach(btn => {
+                btn.classList.remove('bg-orange-500', 'text-white');
+                btn.classList.add('border', 'hover:bg-gray-100');
+                if (btn.textContent === selectedIcon) {
+                    btn.classList.add('bg-orange-500', 'text-white');
+                    btn.classList.remove('border', 'hover:bg-gray-100');
+                }
+            });
+        }
+
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    showNotification('กรุณาเลือกไฟล์รูปภาพเท่านั้น', 'error');
+                    return;
+                }
+
+                // Validate file size (max 5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    showNotification('ขนาดไฟล์ต้องไม่เกิน 5MB', 'error');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const imageUrl = e.target.result;
+                    document.getElementById('selectedImage').value = imageUrl;
+                    document.getElementById('selectedIcon').value = '🍽️'; // Reset to default icon
+                    
+                    // Update preview
+                    const previewContainer = document.getElementById('previewContainer');
+                    previewContainer.innerHTML = `<img src="${imageUrl}" alt="Preview" class="w-full h-full object-cover rounded-lg">`;
+                    previewContainer.className = 'w-32 h-32 mx-auto bg-gray-100 rounded-lg overflow-hidden';
+                    
+                    // Reset icon selection
+                    updateIconSelection();
+                    
+                    showNotification('อัปโหลดรูปภาพสำเร็จ!', 'success');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Reports
+        function renderReports() {
+            posDataManager.updateStats();
+            
+            document.getElementById('todayRevenue').textContent = posDataManager.data.stats.todaySales.toLocaleString() + '฿';
+            document.getElementById('todayOrdersCount').textContent = posDataManager.data.stats.todayOrders;
+            document.getElementById('avgOrderValue').textContent = posDataManager.data.stats.avgOrderValue + '฿';
+            
+            // Popular items
+            const itemCounts = {};
+            const today = new Date().toDateString();
+            const todayOrders = orders.filter(o => new Date(o.createdAt).toDateString() === today);
+            
+            todayOrders.forEach(order => {
+                order.items.forEach(item => {
+                    itemCounts[item.name] = (itemCounts[item.name] || 0) + item.quantity;
+                });
+            });
+            
+            const popularItems = Object.entries(itemCounts)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 5);
+            
+            document.getElementById('popularItems').innerHTML = popularItems.length > 0 ? 
+                popularItems.map(([name, count], index) => `
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                                ${index + 1}
+                            </div>
+                            <span class="font-medium">${name}</span>
+                        </div>
+                        <span class="font-bold text-orange-600">${count} ชิ้น</span>
+                    </div>
+                `).join('') : 
+                '<div class="text-center text-gray-500 py-4">ยังไม่มีข้อมูล</div>';
+            
+            // Recent activities
+            document.getElementById('recentActivities').innerHTML = posDataManager.data.activities.length > 0 ?
+                posDataManager.data.activities.slice(0, 10).map(activity => `
+                    <div class="flex items-center p-2 bg-gray-50 rounded-lg">
+                        <div class="text-sm">
+                            <div class="font-medium">${activity.message}</div>
+                            <div class="text-gray-500 text-xs">${new Date(activity.timestamp).toLocaleString('th-TH')}</div>
+                        </div>
+                    </div>
+                `).join('') :
+                '<div class="text-center text-gray-500 py-4">ยังไม่มีกิจกรรม</div>';
+        }
+
+        // Payment QR Code Functions
+        function handleQRCodeUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    showNotification('กรุณาเลือกไฟล์รูปภาพเท่านั้น', 'error');
+                    return;
+                }
+
+                // Validate file size (max 2MB)
+                if (file.size > 2 * 1024 * 1024) {
+                    showNotification('ขนาดไฟล์ต้องไม่เกิน 2MB', 'error');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const qrCodeUrl = e.target.result;
+                    
+                    // Update preview
+                    const previewContainer = document.getElementById('qrPreviewContainer');
+                    previewContainer.innerHTML = `<img src="${qrCodeUrl}" alt="QR Code" class="w-full h-full object-cover rounded-lg">`;
+                    
+                    // Save to localStorage temporarily
+                    localStorage.setItem('tempQRCode', qrCodeUrl);
+                    
+                    showNotification('อัปโหลด QR Code สำเร็จ!', 'success');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function getPaymentInfo(order) {
+            const showQR = document.getElementById('showQRInOrder')?.checked !== false;
+            const paymentSettings = JSON.parse(localStorage.getItem('paymentSettings') || '{}');
+            
+            if (!showQR || !paymentSettings.qrCodeUrl) {
+                return '';
+            }
+
+            return `
+                <div class="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-bold text-green-800">💳 ชำระเงินผ่าน QR Code</h4>
+                        <button onclick="toggleQRCode('${order.id}')" class="text-green-600 hover:text-green-800 text-sm">
+                            <span id="qr-toggle-${order.id}">👁️ แสดง</span>
+                        </button>
+                    </div>
+                    <div id="qr-section-${order.id}" class="hidden">
+                        <div class="text-center">
+                            <div class="inline-block p-3 bg-white rounded-lg shadow-md mb-3">
+                                <img src="${paymentSettings.qrCodeUrl}" alt="QR Code ชำระเงิน" class="w-32 h-32 mx-auto">
+                            </div>
+                            <div class="text-sm text-gray-700 space-y-1">
+                                <div><strong>ธนาคาร:</strong> ${paymentSettings.bankName || 'ไม่ระบุ'}</div>
+                                <div><strong>เลขบัญชี:</strong> ${paymentSettings.accountNumber || 'ไม่ระบุ'}</div>
+                                <div><strong>ชื่อบัญชี:</strong> ${paymentSettings.accountName || 'ไม่ระบุ'}</div>
+                                <div class="font-bold text-green-600 text-lg">จำนวน: ${order.total}฿</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleQRCode(orderId) {
+            const qrSection = document.getElementById(`qr-section-${orderId}`);
+            const toggleText = document.getElementById(`qr-toggle-${orderId}`);
+            
+            if (qrSection.classList.contains('hidden')) {
+                qrSection.classList.remove('hidden');
+                toggleText.textContent = '🙈 ซ่อน';
+            } else {
+                qrSection.classList.add('hidden');
+                toggleText.textContent = '👁️ แสดง';
+            }
+        }
+
+        // Settings
+        function saveStoreSettings() {
+            const settings = {
+                storeName: document.getElementById('storeName').value,
+                storePhone: document.getElementById('storePhone').value,
+                storeAddress: document.getElementById('storeAddress').value
+            };
+            
+            localStorage.setItem('storeSettings', JSON.stringify(settings));
+            showNotification('บันทึกข้อมูลร้านสำเร็จ!', 'success');
+        }
+
+        function savePaymentSettings() {
+            const tempQRCode = localStorage.getItem('tempQRCode');
+            const settings = {
+                bankName: document.getElementById('bankName').value,
+                accountNumber: document.getElementById('accountNumber').value,
+                accountName: document.getElementById('accountName').value,
+                qrCodeUrl: tempQRCode || JSON.parse(localStorage.getItem('paymentSettings') || '{}').qrCodeUrl
+            };
+            
+            localStorage.setItem('paymentSettings', JSON.stringify(settings));
+            localStorage.removeItem('tempQRCode');
+            showNotification('บันทึกข้อมูลการชำระเงินสำเร็จ!', 'success');
+        }
+
+        function saveSystemSettings() {
+            const settings = {
+                soundNotification: document.getElementById('soundNotification').checked,
+                autoUpdate: document.getElementById('autoUpdate').checked,
+                showQRInOrder: document.getElementById('showQRInOrder').checked,
+                deliveryFee: parseInt(document.getElementById('deliveryFee').value),
+                avgPrepTime: parseInt(document.getElementById('avgPrepTime').value)
+            };
+            
+            localStorage.setItem('systemSettings', JSON.stringify(settings));
+            showNotification('บันทึกการตั้งค่าสำเร็จ!', 'success');
+        }
+
+        function loadPaymentSettings() {
+            const paymentSettings = JSON.parse(localStorage.getItem('paymentSettings') || '{}');
+            
+            if (paymentSettings.bankName) {
+                document.getElementById('bankName').value = paymentSettings.bankName;
+            }
+            if (paymentSettings.accountNumber) {
+                document.getElementById('accountNumber').value = paymentSettings.accountNumber;
+            }
+            if (paymentSettings.accountName) {
+                document.getElementById('accountName').value = paymentSettings.accountName;
+            }
+            if (paymentSettings.qrCodeUrl) {
+                const previewContainer = document.getElementById('qrPreviewContainer');
+                previewContainer.innerHTML = `<img src="${paymentSettings.qrCodeUrl}" alt="QR Code" class="w-full h-full object-cover rounded-lg">`;
+            }
+        }
+
+        function loadSystemSettings() {
+            const systemSettings = JSON.parse(localStorage.getItem('systemSettings') || '{}');
+            
+            if (systemSettings.hasOwnProperty('soundNotification')) {
+                document.getElementById('soundNotification').checked = systemSettings.soundNotification;
+            }
+            if (systemSettings.hasOwnProperty('autoUpdate')) {
+                document.getElementById('autoUpdate').checked = systemSettings.autoUpdate;
+            }
+            if (systemSettings.hasOwnProperty('showQRInOrder')) {
+                document.getElementById('showQRInOrder').checked = systemSettings.showQRInOrder;
+            }
+            if (systemSettings.deliveryFee) {
+                document.getElementById('deliveryFee').value = systemSettings.deliveryFee;
+            }
+            if (systemSettings.avgPrepTime) {
+                document.getElementById('avgPrepTime').value = systemSettings.avgPrepTime;
+            }
+        }
+
+        // Utility Functions
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        function playNotificationSound() {
+            posDataManager.playNotificationSound();
+        }
+
+        // Form Handlers
+        document.getElementById('addMenuForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const imageUrl = document.getElementById('selectedImage').value;
+            const icon = document.getElementById('selectedIcon').value;
+            
+            const newMenu = {
+                name: document.getElementById('menuName').value,
+                category: document.getElementById('menuCategory').value,
+                price: parseInt(document.getElementById('menuPrice').value),
+                description: document.getElementById('menuDescription').value,
+                prepTime: parseInt(document.getElementById('menuPrepTime').value),
+                image: icon,
+                imageUrl: imageUrl || null,
+                available: true,
+                isNew: true
+            };
+            
+            posDataManager.addMenu(newMenu);
+            menus = posDataManager.data.menus;
+            renderMenus();
+            closeAddMenuModal();
+            showNotification('เพิ่มเมนูใหม่สำเร็จ!', 'success');
+        });
+
+        // Initialize
+        function init() {
+            renderOrders();
+            renderMenus();
+            renderReports();
+            updateIconSelection();
+            loadPaymentSettings();
+            loadSystemSettings();
+            
+            // Update current time
+            document.getElementById('currentTime').textContent = 
+                new Date().toLocaleTimeString('th-TH');
+        }
+
+        // Start the application
+        init();
+    </script>
+
+    <style>
+        /* Switch styles for settings */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #ea580c;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+    </style>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97c77f5e56bef916',t:'MTc1NzQyOTQyMi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
